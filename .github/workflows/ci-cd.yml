@@ -1,0 +1,186 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # Security scanning
+  security:
+    runs-on: ubuntu-latest
+    name: Security Scan
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'eclipse-temurin'
+          cache: maven
+
+      # Dependency vulnerability check
+      - name: OWASP Dependency Check
+        run: |
+          ./mvnw dependency-check:check || echo "Vulnerabilities found - check report"
+        continue-on-error: true
+
+      - name: Upload dependency check results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: target/dependency-check-report.html
+
+  # Build and test
+  build:
+    runs-on: ubuntu-latest
+    name: Build & Test
+    needs: security
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: upi_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'eclipse-temurin'
+          cache: maven
+
+      - name: Build with Maven
+        run: |
+          ./mvnw clean package \
+            -DskipTests=false \
+            -Dspring.datasource.url=jdbc:postgresql://localhost:5432/upi_test \
+            -Dspring.datasource.username=test \
+            -Dspring.datasource.password=test
+
+      - name: Run tests
+        run: |
+          ./mvnw test \
+            -Dspring.datasource.url=jdbc:postgresql://localhost:5432/upi_test \
+            -Dspring.datasource.username=test \
+            -Dspring.datasource.password=test
+
+      # Code coverage
+      - name: Generate coverage report
+        run: ./mvnw jacoco:report
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./target/site/jacoco/jacoco.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: target/*.jar
+
+  # Code quality analysis
+  quality:
+    runs-on: ubuntu-latest
+    name: Code Quality
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'eclipse-temurin'
+          cache: maven
+
+      - name: Build for analysis
+        run: ./mvnw clean compile
+
+      # SpotBugs: Static bug detection
+      - name: Run SpotBugs
+        run: ./mvnw spotbugs:spotbugs
+        continue-on-error: true
+
+      # PMD: Code analysis
+      - name: Run PMD
+        run: ./mvnw pmd:pmd pmd:cpd
+        continue-on-error: true
+
+  # Container image build
+  docker:
+    runs-on: ubuntu-latest
+    name: Build Docker Image
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+        if: secrets.DOCKER_USERNAME != ''
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ secrets.DOCKER_REGISTRY }}/upi-mesh
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ secrets.DOCKER_USERNAME != '' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/upi-mesh:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/upi-mesh:buildcache,mode=max
+
+  # Deployment (optional)
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to Production
+    needs: [ build, quality, docker ]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy notification
+        run: |
+          echo "Deployment would happen here"
+          echo "Targets: Kubernetes, AWS ECS, or similar"
+        # This would integrate with your deployment platform (K8s, ECS, etc.)

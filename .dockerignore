@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+
+# Maven
+target/
+.mvn/wrapper/maven-wrapper.jar
+.mvn/wrapper/maven-wrapper.properties
+
+# Logs
+logs/
+*.log
+
+# Node (if using frontend tooling)
+node_modules/
+npm-debug.log
+
+# Documentation (keep for now, remove to reduce image size)
+# README.md
+# AUDIT_REPORT.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+Jenkinsfile
+
+# Test files (optional - keep for validation)
+# src/test/
+
+# OS
+Thumbs.db
