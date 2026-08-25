@@ -1,23 +1,23 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:16-alpine # postgres image
-    container_name: meshpay-postgres
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: meshpay-mysql
     environment:
-      POSTGRES_USER: ${DB_USER:-meshpay}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
-      POSTGRES_DB: ${DB_NAME:-meshpay_db}
-      POSTGRES_MAX_CONNECTIONS: 100
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-meshpay}
+      MYSQL_USER: ${DB_USER:-meshpay}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-changeme}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "${DB_PORT:-3306}:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
     networks:
       - meshpay-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-meshpay}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USER:-meshpay}", "-p${DB_PASSWORD:-changeme}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -39,6 +39,48 @@ services:
       timeout: 5s
       retries: 5
 
+  # Zookeeper (required for Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: meshpay-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    networks:
+      - meshpay-network
+
+  # Kafka (event-driven architecture)
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: meshpay-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - meshpay-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
   # MeshPay Application
   app:
     build:
@@ -48,12 +90,12 @@ services:
     image: meshpay:latest
     environment:
       # Database
-      DB_DRIVER: org.postgresql.Driver
-      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-meshpay_db}
+      DB_DRIVER: com.mysql.cj.jdbc.Driver
+      DB_URL: jdbc:mysql://mysql:3306/${DB_NAME:-meshpay}?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
       DB_USER: ${DB_USER:-meshpay}
       DB_PASSWORD: ${DB_PASSWORD:-changeme}
       DB_POOL_SIZE: 20
-      HIBERNATE_DIALECT: org.hibernate.dialect.PostgreSQLDialect
+      HIBERNATE_DIALECT: org.hibernate.dialect.MySQLDialect
       JPA_DDL: update  # validate in production
       
       # Redis
@@ -61,6 +103,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-changeme}
+      
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       
       # Security
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${OAUTH2_ISSUER_URI:-}
@@ -75,9 +120,11 @@ services:
     ports:
       - "${APP_PORT:-8080}:8080"
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     networks:
       - meshpay-network
@@ -93,7 +140,13 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
+  mysql_data:
     driver: local
   redis_data:
+    driver: local
+  zookeeper_data:
+    driver: local
+  zookeeper_logs:
+    driver: local
+  kafka_data:
     driver: local

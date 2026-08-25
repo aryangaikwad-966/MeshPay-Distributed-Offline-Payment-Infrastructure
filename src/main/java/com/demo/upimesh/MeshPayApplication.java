@@ -2,6 +2,7 @@ package com.demo.upimesh;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Entry point for the MeshPay encrypted peer-to-peer payment network demo.
@@ -13,6 +14,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * Then open http://localhost:8080
  */
 @SpringBootApplication
+@EnableScheduling
 public class MeshPayApplication {
     public static void main(String[] args) {
         SpringApplication.run(MeshPayApplication.class, args);

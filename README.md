@@ -39,7 +39,7 @@ graph TD
         F --> G[Idempotency Service]
         G -- "SETNX" --> H[(Redis Cluster)]
         G --> I[Settlement Service]
-        I --> J[(PostgreSQL Ledger)]
+        I --> J[(MySQL Ledger)]
         I --> K[Audit Log Service]
     end
 
@@ -51,12 +51,15 @@ graph TD
 ```
 
 ### Technical Stack
-*   **Backend**: Spring Boot 3.3 (Java 17)
-*   **Persistence**: PostgreSQL (Transactions/Accounts)
-*   **Caching/Idempotency**: Redis (Distributed locks & claims)
-*   **Security**: Spring Security 6 (OAuth2/JWT, TLS 1.3)
-*   **Resilience**: Resilience4j (Rate limiting, Circuit breaking)
-*   **Observability**: Micrometer, Prometheus, Actuator
+*   **Backend**: Spring Boot 3.3.5 (Java 17)
+*   **Database**: MySQL 8.0 (primary), H2 (development/testing)
+*   **Cache**: Redis 7 with Jedis client
+*   **Security**: Spring Security 6 with OAuth2/JWT
+*   **Resilience**: Resilience4j (rate limiting)
+*   **Monitoring**: Prometheus, Micrometer, Spring Boot Actuator
+*   **Documentation**: OpenAPI/Swagger 3.0
+*   **Build**: Maven 3.8+
+*   **Containerization**: Docker with multi-stage builds
 
 ---
 
@@ -95,8 +98,8 @@ To prevent double-spending in a "duplicate-storm" scenario:
 git clone https://github.com/aryangaikwad-966/Meshpay.git
 cd Meshpay
 
-# 2. Start Infrastructure (Postgres + Redis)
-docker-compose up -d postgres redis
+# 2. Start Infrastructure (MySQL + Redis)
+docker-compose up -d mysql redis
 
 # 3. Run the Application
 ./mvnw spring-boot:run

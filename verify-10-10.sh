@@ -54,8 +54,8 @@ else
     test_fail
 fi
 
-test_check "PostgreSQL driver configured"
-if grep -q "postgresql" pom.xml; then
+test_check "MySQL driver configured"
+if grep -q "mysql-connector-j" pom.xml; then
     test_pass
 else
     test_fail
@@ -234,8 +234,8 @@ else
     test_fail
 fi
 
-test_check "PostgreSQL in docker-compose"
-if grep -q "postgres.*image" docker-compose.yml; then
+test_check "MySQL in docker-compose"
+if grep -q "mysql.*image" docker-compose.yml; then
     test_pass
 else
     test_fail

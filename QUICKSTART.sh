@@ -42,7 +42,7 @@ Edit .env with your values (at minimum):
   REDIS_PASSWORD=your_redis_password
   CORS_ALLOWED_ORIGINS=http://localhost:3000  # Your frontend domain
 
-Start the full stack (PostgreSQL + Redis + App):
+Start the full stack (MySQL + Redis + App):
   $ docker-compose up -d
 
 Verify all services are running:
@@ -50,7 +50,7 @@ Verify all services are running:
   
 Expected output:
   STATUS          PORTS
-  healthy         5432
+  healthy         3306
   healthy         6379
   healthy         8080
 
@@ -212,7 +212,7 @@ Redis connection issues?
   Expected: PONG
 
 Database connection issues?
-  $ docker-compose exec postgres psql -U upimesh -d upi_mesh -c "SELECT 1;"
+  $ docker-compose exec mysql mysql -u meshpay -pchangeme meshpay -e "SELECT 1;"
 
 High memory usage?
   Add to docker-compose.yml:

@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Docker & Docker Compose
-- PostgreSQL 16+
+- MySQL 8.0+
 - Redis 7+
 - Java 17+
 - Maven 3.8+
@@ -23,7 +23,7 @@ cp .env.example .env
 # Edit .env with your settings
 nano .env
 
-# Start all services (app, PostgreSQL, Redis)
+# Start all services (app, MySQL, Redis)
 docker-compose up -d
 
 # Check logs
@@ -39,9 +39,9 @@ docker-compose logs -f app
 ### 2. Local Machine Setup
 
 ```bash
-# Install PostgreSQL
-brew install postgresql  # macOS
-# or apt-get install postgresql  # Ubuntu
+# Install MySQL
+brew install mysql  # macOS
+# or apt-get install mysql-server  # Ubuntu
 
 # Install Redis
 brew install redis  # macOS
@@ -49,7 +49,8 @@ brew install redis  # macOS
 
 # Start services
 redis-server &
-pg_ctl -D /usr/local/var/postgres start
+brew services start mysql  # macOS
+# or sudo systemctl start mysql  # Ubuntu
 
 # Build and run application
 ./mvnw clean package
@@ -58,7 +59,7 @@ java -jar target/upi-offline-mesh-*.jar
 
 ## Production Deployment
 
-### AWS ECS with RDS + ElastiCache
+### AWS ECS with RDS (MySQL) + ElastiCache
 
 ```bash
 # 1. Build Docker image
@@ -114,29 +115,21 @@ kubectl logs -n upi-mesh deployment/upi-mesh
 
 ## Database Setup
 
-### PostgreSQL Initialization
+### MySQL Initialization
 
 ```sql
--- Connect as superuser
-psql -U postgres
+-- Connect as root
+mysql -u root -p
 
 -- Create database
-CREATE DATABASE upi_mesh
-  WITH OWNER upi_user
-  ENCODING 'UTF8'
-  LC_COLLATE 'en_US.UTF-8'
-  LC_CTYPE 'en_US.UTF-8';
+CREATE DATABASE meshpay
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
 
 -- Create user
-CREATE USER upi_user WITH PASSWORD 'secure_password_here';
-GRANT CONNECT ON DATABASE upi_mesh TO upi_user;
-GRANT USAGE ON SCHEMA public TO upi_user;
-GRANT CREATE ON SCHEMA public TO upi_user;
-
--- Enable extensions
-\c upi_mesh
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE USER 'meshpay'@'%' IDENTIFIED BY 'secure_password_here';
+GRANT ALL PRIVILEGES ON meshpay.* TO 'meshpay'@'%';
+FLUSH PRIVILEGES;
 
 -- Tables will be auto-created by Hibernate (set spring.jpa.hibernate.ddl-auto=create or update)
 ```
@@ -146,7 +139,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 ```sql
 -- Enable transparent data encryption
 -- This is database-specific and typically configured at the DB instance level
--- For AWS RDS: Enable "Encryption in storage" during RDS creation
+-- For AWS RDS: Enable "Encryption in storage" during RDS MySQL creation
 ```
 
 ## Security Checklist
@@ -271,7 +264,7 @@ docker-compose exec app wget -O- http://localhost:8080/actuator/health
 ### High latency
 ```bash
 # Check database performance
-docker-compose exec postgres psql -U upimesh -d upi_mesh -c "SELECT * FROM pg_stat_statements ORDER BY mean_time DESC LIMIT 10;"
+docker-compose exec mysql mysql -u meshpay -pchangeme meshpay -e "SHOW PROCESSLIST;"
 
 # Check Redis keys
 docker-compose exec redis redis-cli INFO stats
@@ -286,6 +279,6 @@ export JAVA_OPTS="-Xmx2g -Xms1g"
 ## References
 
 - [Spring Boot Production Deployment](https://spring.io/guides/gs/spring-boot/)
-- [PostgreSQL High Availability](https://www.postgresql.org/docs/current/high-availability.html)
+- [MySQL High Availability](https://dev.mysql.com/doc/refman/8.0/en/ha-overview.html)
 - [Redis Replication](https://redis.io/topics/replication)
 - [Docker Best Practices](https://docs.docker.com/develop/dev-best-practices/)
