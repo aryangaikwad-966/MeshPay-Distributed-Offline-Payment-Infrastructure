@@ -38,15 +38,22 @@ graph TD
         E --> F[Bridge Ingestion Service]
         F --> G[Idempotency Service]
         G -- "SETNX" --> H[(Redis Cluster)]
-        G --> I[Settlement Service]
+        G --> I[Payment Settlement Service]
         I --> J[(MySQL Ledger)]
-        I --> K[Audit Log Service]
+        I --> K[Outbox Service]
+        K --> L[(Kafka Cluster)]
+        L --> M[Payment Event Consumer]
+        M --> I
+        M --> N[Payment Saga Orchestrator]
+        N --> I
     end
 
     subgraph "Observability"
-        L[Prometheus] --> E
-        M[Grafana] --> L
-        N[Swagger/OpenAPI] --> E
+        O[Prometheus] --> E
+        P[Grafana] --> O
+        Q[OpenTelemetry] --> E
+        R[Jaeger/Tempo] --> Q
+        S[Swagger/OpenAPI] --> E
     end
 ```
 
@@ -54,9 +61,11 @@ graph TD
 *   **Backend**: Spring Boot 3.3.5 (Java 17)
 *   **Database**: MySQL 8.0 (primary), H2 (development/testing)
 *   **Cache**: Redis 7 with Jedis client
+*   **Message Broker**: Apache Kafka 3.x for event-driven architecture
 *   **Security**: Spring Security 6 with OAuth2/JWT
-*   **Resilience**: Resilience4j (rate limiting)
+*   **Resilience**: Resilience4j (circuit breakers, retries, rate limiting, time limiters)
 *   **Monitoring**: Prometheus, Micrometer, Spring Boot Actuator
+*   **Distributed Tracing**: OpenTelemetry with OTLP exporter
 *   **Documentation**: OpenAPI/Swagger 3.0
 *   **Build**: Maven 3.8+
 *   **Containerization**: Docker with multi-stage builds
@@ -85,6 +94,51 @@ To prevent double-spending in a "duplicate-storm" scenario:
 
 ---
 
+## 🔄 Event-Driven Architecture
+
+MeshPay uses an event-driven architecture with Kafka for reliable, asynchronous payment processing.
+
+### Key Patterns
+
+**Transactional Outbox Pattern**
+- Events are written to the outbox table in the same transaction as business data
+- A scheduled processor publishes events to Kafka
+- Ensures exactly-once event delivery
+
+**Saga Pattern**
+- Distributed transactions are managed using the Saga pattern
+- Each saga step has a compensation action for failure recovery
+- Supports complex multi-step payment settlement flows
+
+**Idempotent Consumers**
+- Kafka consumers track processed events to prevent duplicate processing
+- Uses event_processed table for idempotency
+- Ensures exactly-once processing semantics
+
+### Event Flow
+
+```
+PaymentReceived → PaymentValidated → SettlementRequested → PaymentSettled
+     ↓                  ↓                    ↓                  ↓
+   Kafka             Kafka                Kafka              Kafka
+     ↓                  ↓                    ↓                  ↓
+   Consumer          Consumer             Consumer           Consumer
+     ↓                  ↓                    ↓                  ↓
+   Validation      Settlement          Settlement          Balance
+                    Request             Completion          Update
+```
+
+### Topics
+
+- `payment-received` - Initial payment events
+- `payment-validated` - Validation completion events
+- `payment-settlement-requested` - Settlement request events
+- `payment-settled` - Final settlement events
+- `payment-failed` - Failure events
+- `payment-dlq` - Dead letter queue for failed events
+
+---
+
 ## ⚡ Getting Started
 
 ### Prerequisites
@@ -98,8 +152,8 @@ To prevent double-spending in a "duplicate-storm" scenario:
 git clone https://github.com/aryangaikwad-966/Meshpay.git
 cd Meshpay
 
-# 2. Start Infrastructure (MySQL + Redis)
-docker-compose up -d mysql redis
+# 2. Start Infrastructure (MySQL + Redis + Kafka)
+docker-compose up -d mysql redis kafka
 
 # 3. Run the Application
 ./mvnw spring-boot:run
@@ -132,10 +186,14 @@ The project includes an interactive **Network Simulator** at `http://localhost:8
 ### Project Structure
 ```text
 src/main/java/com/demo/upimesh/
-├── config/             # Security, Redis, and App configurations
+├── config/             # Security, Redis, Kafka, and App configurations
 ├── controller/         # REST API Controllers & Exception Handlers
 ├── crypto/             # RSA/AES Hybrid Encryption Logic
+├── consumer/           # Kafka Event Consumers
+├── events/             # Event DTOs and Envelope
+├── metrics/            # Custom Metrics (PaymentMetrics)
 ├── model/              # JPA Entities and Repository Interfaces
+├── saga/               # Saga Pattern Implementation
 ├── security/           # Audit Filters and JWT Logic
 └── service/            # Core Business & Mesh Simulation Logic
 ```
@@ -145,6 +203,11 @@ We enforce a high-quality testing standard, including concurrency and security t
 ```bash
 ./mvnw test
 ```
+
+### Additional Documentation
+- **Security Verification**: See [SECURITY_VERIFICATION.md](SECURITY_VERIFICATION.md) for security analysis and recommendations
+- **Data Ownership**: See [DATA_OWNERSHIP.md](DATA_OWNERSHIP.md) for MySQL data ownership boundaries and migration details
+- **Deployment Guide**: See [DEPLOYMENT.md](DEPLOYMENT.md) for production deployment strategies
 
 ---
 

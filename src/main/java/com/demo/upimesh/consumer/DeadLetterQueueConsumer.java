@@ -1,6 +1,7 @@
 package com.demo.upimesh.consumer;
 
 import com.demo.upimesh.events.EventEnvelope;
+import com.demo.upimesh.metrics.PaymentMetrics;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Component;
 public class DeadLetterQueueConsumer {
 
     private final ObjectMapper objectMapper;
+    private final PaymentMetrics paymentMetrics;
 
     @KafkaListener(
         topics = "${kafka.dlq.topic:payment-events-dlq}",
@@ -37,6 +39,7 @@ public class DeadLetterQueueConsumer {
     ) {
         try {
             log.warn("Processing DLQ message: topic={}, partition={}, offset={}", topic, partition, offset);
+            paymentMetrics.incrementDlqMessage();
             
             // Parse the original message
             EventEnvelope eventEnvelope = objectMapper.readValue(message, EventEnvelope.class);

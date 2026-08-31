@@ -5,6 +5,8 @@ import com.demo.upimesh.events.PaymentFailedEvent;
 import com.demo.upimesh.events.PaymentReceivedEvent;
 import com.demo.upimesh.events.PaymentSettledEvent;
 import com.demo.upimesh.events.PaymentValidatedEvent;
+import com.demo.upimesh.metrics.PaymentMetrics;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,6 +25,7 @@ import java.util.UUID;
 public class PaymentSettlementService {
 
     private final OutboxService outboxService;
+    private final PaymentMetrics paymentMetrics;
 
     /**
      * Process a received payment packet
@@ -35,6 +38,8 @@ public class PaymentSettlementService {
             String aggregateId = packetHash;
             
             log.info("Processing payment received: packetId={}, packetHash={}", packetId, packetHash);
+            paymentMetrics.incrementPaymentReceived();
+            paymentMetrics.incrementPendingSettlements();
             
             // Create the payment received event
             PaymentReceivedEvent paymentReceivedEvent = PaymentReceivedEvent.builder()
@@ -71,6 +76,8 @@ public class PaymentSettlementService {
             
         } catch (Exception e) {
             log.error("Error processing payment received: packetHash={}", packetHash, e);
+            paymentMetrics.incrementPaymentFailed();
+            paymentMetrics.decrementPendingSettlements();
             throw new RuntimeException("Failed to process payment received", e);
         }
     }
@@ -82,6 +89,7 @@ public class PaymentSettlementService {
     @Transactional
     public void validatePayment(String packetId, String packetHash, String senderVpa, String receiverVpa, 
                                 BigDecimal amount, String nonce, Long signedAt, String parentEventId) {
+        Timer.Sample timer = paymentMetrics.startValidationTimer();
         try {
             String eventId = UUID.randomUUID().toString();
             String aggregateId = packetHash;
@@ -126,6 +134,8 @@ public class PaymentSettlementService {
                 );
                 
                 log.info("Payment validated event saved to outbox: eventId={}", eventId);
+                paymentMetrics.incrementPaymentValidated();
+                paymentMetrics.stopValidationTimer(timer);
                 
                 // Trigger settlement request
                 requestSettlement(packetId, packetHash, senderVpa, receiverVpa, amount, nonce, signedAt, eventId);
@@ -137,6 +147,8 @@ public class PaymentSettlementService {
             
         } catch (Exception e) {
             log.error("Error validating payment: packetHash={}", packetHash, e);
+            paymentMetrics.incrementPaymentFailed();
+            paymentMetrics.stopValidationTimer(timer);
             throw new RuntimeException("Failed to validate payment", e);
         }
     }
@@ -147,11 +159,13 @@ public class PaymentSettlementService {
     @Transactional
     public void requestSettlement(String packetId, String packetHash, String senderVpa, String receiverVpa, 
                                   BigDecimal amount, String nonce, Long signedAt, String parentEventId) {
+        Timer.Sample timer = paymentMetrics.startSettlementTimer();
         try {
             String eventId = UUID.randomUUID().toString();
             String aggregateId = packetHash;
             
             log.info("Requesting settlement: packetHash={}", packetHash);
+            paymentMetrics.incrementSettlementRequested();
             
             // Create settlement request event
             com.demo.upimesh.events.PaymentSettlementRequestedEvent settlementRequestedEvent = 
@@ -188,6 +202,7 @@ public class PaymentSettlementService {
             );
             
             log.info("Settlement requested event saved to outbox: eventId={}", eventId);
+            paymentMetrics.stopSettlementTimer(timer);
             
             // In a real system, this would trigger external settlement
             // For demo, we'll directly mark as settled
@@ -195,6 +210,8 @@ public class PaymentSettlementService {
             
         } catch (Exception e) {
             log.error("Error requesting settlement: packetHash={}", packetHash, e);
+            paymentMetrics.incrementPaymentFailed();
+            paymentMetrics.stopSettlementTimer(timer);
             throw new RuntimeException("Failed to request settlement", e);
         }
     }
@@ -210,6 +227,8 @@ public class PaymentSettlementService {
             String aggregateId = packetHash;
             
             log.info("Marking payment as settled: packetHash={}", packetHash);
+            paymentMetrics.incrementPaymentSettled();
+            paymentMetrics.decrementPendingSettlements();
             
             // Create payment settled event
             PaymentSettledEvent paymentSettledEvent = PaymentSettledEvent.builder()
@@ -246,6 +265,7 @@ public class PaymentSettlementService {
             
         } catch (Exception e) {
             log.error("Error marking payment as settled: packetHash={}", packetHash, e);
+            paymentMetrics.incrementPaymentFailed();
             throw new RuntimeException("Failed to mark payment as settled", e);
         }
     }
@@ -260,6 +280,8 @@ public class PaymentSettlementService {
             String aggregateId = packetHash;
             
             log.error("Handling payment failure: packetHash={}, failureType={}", packetHash, failureType);
+            paymentMetrics.incrementPaymentFailed();
+            paymentMetrics.decrementPendingSettlements();
             
             // Create payment failed event
             PaymentFailedEvent paymentFailedEvent = PaymentFailedEvent.builder()

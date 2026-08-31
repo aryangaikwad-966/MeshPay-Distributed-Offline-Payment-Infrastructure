@@ -1,6 +1,8 @@
 package com.demo.upimesh.saga;
 
+import com.demo.upimesh.metrics.PaymentMetrics;
 import com.demo.upimesh.service.PaymentSettlementService;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,6 +21,7 @@ public class PaymentSagaOrchestrator {
 
     private final PaymentSettlementService paymentSettlementService;
     private final SagaStateManager sagaStateManager;
+    private final PaymentMetrics paymentMetrics;
 
     /**
      * Start a new payment saga
@@ -26,8 +29,11 @@ public class PaymentSagaOrchestrator {
     @Transactional
     public String startPaymentSaga(String packetId, String packetHash, String bridgeNodeId, String ciphertext) {
         String sagaId = UUID.randomUUID().toString();
+        Timer.Sample timer = paymentMetrics.startSagaExecutionTimer();
         
         log.info("Starting payment saga: sagaId={}, packetHash={}", sagaId, packetHash);
+        paymentMetrics.incrementSagaStarted();
+        paymentMetrics.incrementActiveSagas();
         
         // Initialize saga state
         sagaStateManager.createSaga(sagaId, packetHash, "PAYMENT_RECEIVED");
@@ -38,12 +44,16 @@ public class PaymentSagaOrchestrator {
             
             // Update saga state
             sagaStateManager.updateSagaState(sagaId, "PAYMENT_RECEIVED_COMPLETED");
+            paymentMetrics.stopSagaExecutionTimer(timer);
             
             return sagaId;
             
         } catch (Exception e) {
             log.error("Payment saga failed at PAYMENT_RECEIVED: sagaId={}", sagaId, e);
             sagaStateManager.updateSagaState(sagaId, "PAYMENT_RECEIVED_FAILED");
+            paymentMetrics.incrementSagaCompensated();
+            paymentMetrics.decrementActiveSagas();
+            paymentMetrics.stopSagaExecutionTimer(timer);
             compensatePaymentReceived(sagaId, packetHash);
             throw new RuntimeException("Payment saga failed", e);
         }
@@ -108,10 +118,14 @@ public class PaymentSagaOrchestrator {
         try {
             paymentSettlementService.markPaymentSettled(packetId, packetHash, senderVpa, receiverVpa, amount, null);
             sagaStateManager.updateSagaState(sagaId, "SAGA_COMPLETED");
+            paymentMetrics.incrementSagaCompleted();
+            paymentMetrics.decrementActiveSagas();
             
         } catch (Exception e) {
             log.error("Payment saga failed at COMPLETION: sagaId={}", sagaId, e);
             sagaStateManager.updateSagaState(sagaId, "SETTLEMENT_COMPLETION_FAILED");
+            paymentMetrics.incrementSagaCompensated();
+            paymentMetrics.decrementActiveSagas();
             compensateSettlement(sagaId, packetHash);
             throw new RuntimeException("Settlement completion failed", e);
         }
