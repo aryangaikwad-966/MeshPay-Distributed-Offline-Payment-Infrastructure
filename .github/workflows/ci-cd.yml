@@ -56,6 +56,33 @@ jobs:
           --health-retries 5
         ports:
           - 3306:3306
+      kafka:
+        image: confluentinc/cp-kafka:7.5.0
+        env:
+          KAFKA_BROKER_ID: 1
+          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd="kafka-broker-api-versions --bootstrap-server localhost:9092"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      zookeeper:
+        image: confluentinc/cp-zookeeper:7.5.0
+        env:
+          ZOOKEEPER_CLIENT_PORT: 2181
+          ZOOKEEPER_TICK_TIME: 2000
+        ports:
+          - 2181:2181
+        options: >-
+          --health-cmd="nc -z localhost 2181 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -73,14 +100,16 @@ jobs:
             -DskipTests=false \
             -Dspring.datasource.url=jdbc:mysql://localhost:3306/meshpay_test?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC \
             -Dspring.datasource.username=test \
-            -Dspring.datasource.password=test
+            -Dspring.datasource.password=test \
+            -Dspring.kafka.bootstrap-servers=localhost:9092
 
       - name: Run tests
         run: |
           ./mvnw test \
             -Dspring.datasource.url=jdbc:mysql://localhost:3306/meshpay_test?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC \
             -Dspring.datasource.username=test \
-            -Dspring.datasource.password=test
+            -Dspring.datasource.password=test \
+            -Dspring.kafka.bootstrap-servers=localhost:9092
 
       # Code coverage
       - name: Generate coverage report
