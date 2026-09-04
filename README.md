@@ -33,32 +33,35 @@ graph TD
         C -- "Gossip Protocol" --> D[Bridge Node]
     end
 
-    subgraph "MeshPay Cloud Infrastructure"
-        D -- "HTTPS / API Ingest" --> E[API Gateway / Load Balancer]
-        E --> F[Bridge Ingestion Service]
-        F --> G[Idempotency Service]
-        G -- "SETNX" --> H[(Redis Cluster)]
-        G --> I[Payment Settlement Service]
-        I --> J[(MySQL Ledger)]
-        I --> K[Outbox Service]
-        K --> L[(Kafka Cluster)]
-        L --> M[Payment Event Consumer]
-        M --> I
-        M --> N[Payment Saga Orchestrator]
-        N --> I
+    subgraph "MeshPay Microservices Architecture"
+        D -- "HTTPS / API Ingest" --> E[API Gateway]
+        E --> F[Service Discovery]
+        E --> G[Payment Service]
+        E --> H[Saga Service]
+        G --> I[Idempotency Service]
+        I -- "SETNX" --> J[(Redis Cluster)]
+        I --> K[Payment Settlement Service]
+        K --> L[(MySQL Ledger)]
+        K --> M[Outbox Service]
+        M --> N[(Kafka Cluster)]
+        N --> O[Payment Event Consumer]
+        O --> K
+        O --> P[Payment Saga Orchestrator]
+        P --> K
     end
 
     subgraph "Observability"
-        O[Prometheus] --> E
-        P[Grafana] --> O
-        Q[OpenTelemetry] --> E
-        R[Jaeger/Tempo] --> Q
-        S[Swagger/OpenAPI] --> E
+        Q[Prometheus] --> E
+        R[Grafana] --> Q
+        S[OpenTelemetry] --> E
+        T[Jaeger/Tempo] --> S
+        U[Swagger/OpenAPI] --> E
     end
 ```
 
 ### Technical Stack
 *   **Backend**: Spring Boot 3.3.5 (Java 17)
+*   **Microservices**: Spring Cloud (Eureka, Gateway, OpenFeign)
 *   **Database**: MySQL 8.0 (primary), H2 (development/testing)
 *   **Cache**: Redis 7 with Jedis client
 *   **Message Broker**: Apache Kafka 3.x for event-driven architecture
@@ -94,9 +97,33 @@ To prevent double-spending in a "duplicate-storm" scenario:
 
 ---
 
-## 🔄 Event-Driven Architecture
+## 🔄 Microservices Architecture
 
-MeshPay uses an event-driven architecture with Kafka for reliable, asynchronous payment processing.
+MeshPay is built as a microservices architecture with the following services:
+
+### Services
+
+**API Gateway (Port 8080)**
+- Single entry point for all client requests
+- Routes requests to appropriate microservices
+- Handles cross-cutting concerns (authentication, rate limiting)
+
+**Payment Service (Port 8081)**
+- Core payment processing logic
+- Account and transaction management
+- Event publishing via outbox pattern
+- Registers with Eureka for service discovery
+
+**Saga Service (Port 8082)**
+- Distributed transaction orchestration
+- Saga state management
+- Compensation logic for failure recovery
+- Event-driven coordination with Payment Service
+
+**Eureka Server (Port 8761)**
+- Service discovery and registration
+- Health monitoring of services
+- Load balancing support
 
 ### Key Patterns
 
@@ -114,6 +141,11 @@ MeshPay uses an event-driven architecture with Kafka for reliable, asynchronous 
 - Kafka consumers track processed events to prevent duplicate processing
 - Uses event_processed table for idempotency
 - Ensures exactly-once processing semantics
+
+**Service Discovery**
+- Services register with Eureka on startup
+- Gateway discovers services dynamically
+- Supports horizontal scaling
 
 ### Event Flow
 

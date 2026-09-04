@@ -1,49 +1,53 @@
 package com.demo.upimesh.saga;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Optional;
 
 /**
  * Manages Saga state for distributed transactions
- * In production, this would use a persistent store (database)
+ * Uses persistent database storage for microservices architecture
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class SagaStateManager {
 
-    private final Map<String, SagaState> sagaStates = new ConcurrentHashMap<>();
+    private final SagaStateRepository sagaStateRepository;
 
     /**
      * Create a new saga state
      */
+    @Transactional
     public void createSaga(String sagaId, String aggregateId, String initialState) {
         SagaState state = SagaState.builder()
                 .sagaId(sagaId)
+                .packetHash(aggregateId)
                 .aggregateId(aggregateId)
                 .state(initialState)
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
                 .currentStep(initialState)
                 .build();
         
-        sagaStates.put(sagaId, state);
+        sagaStateRepository.save(state);
         log.info("Created saga state: sagaId={}, state={}", sagaId, initialState);
     }
 
     /**
      * Update saga state
      */
+    @Transactional
     public void updateSagaState(String sagaId, String newState) {
-        SagaState state = sagaStates.get(sagaId);
-        if (state != null) {
+        Optional<SagaState> stateOpt = sagaStateRepository.findBySagaId(sagaId);
+        if (stateOpt.isPresent()) {
+            SagaState state = stateOpt.get();
             state.setState(newState);
-            state.setUpdatedAt(Instant.now());
             state.setCurrentStep(newState);
-            sagaStates.put(sagaId, state);
+            state.setUpdatedAt(Instant.now());
+            sagaStateRepository.save(state);
             log.info("Updated saga state: sagaId={}, newState={}", sagaId, newState);
         } else {
             log.warn("Saga state not found for update: sagaId={}", sagaId);
@@ -54,21 +58,22 @@ public class SagaStateManager {
      * Get saga state
      */
     public SagaState getSagaState(String sagaId) {
-        return sagaStates.get(sagaId);
+        return sagaStateRepository.findBySagaId(sagaId).orElse(null);
     }
 
     /**
      * Delete saga state
      */
+    @Transactional
     public void deleteSaga(String sagaId) {
-        sagaStates.remove(sagaId);
+        sagaStateRepository.deleteBySagaId(sagaId);
         log.info("Deleted saga state: sagaId={}", sagaId);
     }
 
     /**
-     * Get all active sagas
+     * Get saga state by packet hash
      */
-    public Map<String, SagaState> getAllSagas() {
-        return new ConcurrentHashMap<>(sagaStates);
+    public SagaState getSagaStateByPacketHash(String packetHash) {
+        return sagaStateRepository.findByPacketHash(packetHash).orElse(null);
     }
 }

@@ -1,7 +1,11 @@
 package com.demo.upimesh.saga;
 
+import com.demo.upimesh.events.CompleteSettlementCommand;
+import com.demo.upimesh.events.RequestSettlementCommand;
+import com.demo.upimesh.events.ValidatePaymentCommand;
 import com.demo.upimesh.metrics.PaymentMetrics;
 import com.demo.upimesh.service.PaymentSettlementService;
+import com.demo.upimesh.service.SagaCommandProducer;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +17,7 @@ import java.util.UUID;
 /**
  * Saga Orchestrator for Payment Settlement
  * Manages distributed transactions with compensation actions
+ * Decoupled from Payment Service via Kafka events
  */
 @Service
 @Slf4j
@@ -22,6 +27,7 @@ public class PaymentSagaOrchestrator {
     private final PaymentSettlementService paymentSettlementService;
     private final SagaStateManager sagaStateManager;
     private final PaymentMetrics paymentMetrics;
+    private final SagaCommandProducer sagaCommandProducer;
 
     /**
      * Start a new payment saga
@@ -61,6 +67,7 @@ public class PaymentSagaOrchestrator {
 
     /**
      * Continue saga with payment validation
+     * Sends Kafka command to Payment Service instead of direct call
      */
     @Transactional
     public void validatePaymentSaga(String sagaId, String packetId, String packetHash, 
@@ -71,8 +78,19 @@ public class PaymentSagaOrchestrator {
         sagaStateManager.updateSagaState(sagaId, "VALIDATING_PAYMENT");
         
         try {
-            paymentSettlementService.validatePayment(packetId, packetHash, senderVpa, receiverVpa, amount, nonce, signedAt, null);
-            sagaStateManager.updateSagaState(sagaId, "PAYMENT_VALIDATED_COMPLETED");
+            // Send Kafka command to Payment Service
+            ValidatePaymentCommand command = ValidatePaymentCommand.builder()
+                    .sagaId(sagaId)
+                    .packetId(packetId)
+                    .packetHash(packetHash)
+                    .senderVpa(senderVpa)
+                    .receiverVpa(receiverVpa)
+                    .amount(amount)
+                    .nonce(nonce)
+                    .signedAt(signedAt)
+                    .build();
+            sagaCommandProducer.sendValidatePaymentCommand(command);
+            sagaStateManager.updateSagaState(sagaId, "PAYMENT_VALIDATION_COMMAND_SENT");
             
         } catch (Exception e) {
             log.error("Payment saga failed at VALIDATION: sagaId={}", sagaId, e);
@@ -84,6 +102,7 @@ public class PaymentSagaOrchestrator {
 
     /**
      * Continue saga with settlement request
+     * Sends Kafka command to Payment Service instead of direct call
      */
     @Transactional
     public void requestSettlementSaga(String sagaId, String packetId, String packetHash,
@@ -94,8 +113,19 @@ public class PaymentSagaOrchestrator {
         sagaStateManager.updateSagaState(sagaId, "REQUESTING_SETTLEMENT");
         
         try {
-            paymentSettlementService.requestSettlement(packetId, packetHash, senderVpa, receiverVpa, amount, nonce, signedAt, null);
-            sagaStateManager.updateSagaState(sagaId, "SETTLEMENT_REQUESTED_COMPLETED");
+            // Send Kafka command to Payment Service
+            RequestSettlementCommand command = RequestSettlementCommand.builder()
+                    .sagaId(sagaId)
+                    .packetId(packetId)
+                    .packetHash(packetHash)
+                    .senderVpa(senderVpa)
+                    .receiverVpa(receiverVpa)
+                    .amount(amount)
+                    .nonce(nonce)
+                    .signedAt(signedAt)
+                    .build();
+            sagaCommandProducer.sendRequestSettlementCommand(command);
+            sagaStateManager.updateSagaState(sagaId, "SETTLEMENT_REQUEST_COMMAND_SENT");
             
         } catch (Exception e) {
             log.error("Payment saga failed at SETTLEMENT_REQUEST: sagaId={}", sagaId, e);
@@ -107,6 +137,7 @@ public class PaymentSagaOrchestrator {
 
     /**
      * Complete saga with settlement confirmation
+     * Sends Kafka command to Payment Service instead of direct call
      */
     @Transactional
     public void completePaymentSaga(String sagaId, String packetId, String packetHash,
@@ -116,10 +147,17 @@ public class PaymentSagaOrchestrator {
         sagaStateManager.updateSagaState(sagaId, "COMPLETING_SETTLEMENT");
         
         try {
-            paymentSettlementService.markPaymentSettled(packetId, packetHash, senderVpa, receiverVpa, amount, null);
-            sagaStateManager.updateSagaState(sagaId, "SAGA_COMPLETED");
-            paymentMetrics.incrementSagaCompleted();
-            paymentMetrics.decrementActiveSagas();
+            // Send Kafka command to Payment Service
+            CompleteSettlementCommand command = CompleteSettlementCommand.builder()
+                    .sagaId(sagaId)
+                    .packetId(packetId)
+                    .packetHash(packetHash)
+                    .senderVpa(senderVpa)
+                    .receiverVpa(receiverVpa)
+                    .amount(amount)
+                    .build();
+            sagaCommandProducer.sendCompleteSettlementCommand(command);
+            sagaStateManager.updateSagaState(sagaId, "SETTLEMENT_COMPLETION_COMMAND_SENT");
             
         } catch (Exception e) {
             log.error("Payment saga failed at COMPLETION: sagaId={}", sagaId, e);
