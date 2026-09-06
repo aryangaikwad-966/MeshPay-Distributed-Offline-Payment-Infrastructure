@@ -62,12 +62,12 @@ public class OutboxProcessor {
                     
                     // Increment retry count
                     outbox.setRetryCount(outbox.getRetryCount() + 1);
-                    outbox.setLastRetryAt(Instant.now());
+                    outbox.setErrorMessage(e.getMessage());
+                    outboxRepository.save(outbox);
                     
                     // If max retries exceeded, mark as failed
                     if (outbox.getRetryCount() >= 3) {
                         outbox.setProcessed(true);
-                        outbox.setProcessingStatus("FAILED");
                         log.error("Outbox event failed after max retries: eventId={}", outbox.getEventId());
                     }
                     

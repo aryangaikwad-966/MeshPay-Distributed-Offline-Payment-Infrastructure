@@ -11,8 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-
 /**
  * Kafka consumer for payment events from Payment Service
  * Handles payment lifecycle events to advance saga state
@@ -32,8 +30,23 @@ public class PaymentEventConsumer {
             PaymentValidatedEvent event = objectMapper.readValue(message, PaymentValidatedEvent.class);
             
             // Advance saga to settlement request
-            // In a real implementation, we would extract sagaId from the event or correlation
-            log.info("Payment validated, advancing saga for packetHash={}", event.getPacketHash());
+            // Use packetHash as correlation ID to find the saga
+            String sagaId = paymentSagaOrchestrator.findSagaByPacketHash(event.getPacketHash());
+            if (sagaId != null) {
+                paymentSagaOrchestrator.requestSettlementSaga(
+                    sagaId,
+                    event.getPacketId(),
+                    event.getPacketHash(),
+                    event.getSenderVpa(),
+                    event.getReceiverVpa(),
+                    event.getAmount(),
+                    event.getNonce(),
+                    event.getSignedAt()
+                );
+                log.info("Payment validated, advanced saga to settlement request: sagaId={}", sagaId);
+            } else {
+                log.warn("No saga found for packetHash={}", event.getPacketHash());
+            }
             
         } catch (Exception e) {
             log.error("Error processing payment validated event", e);
@@ -47,7 +60,12 @@ public class PaymentEventConsumer {
             PaymentSettlementRequestedEvent event = objectMapper.readValue(message, PaymentSettlementRequestedEvent.class);
             
             // Advance saga to completion
-            log.info("Payment settlement requested, advancing saga for packetHash={}", event.getPacketHash());
+            String sagaId = paymentSagaOrchestrator.findSagaByPacketHash(event.getPacketHash());
+            if (sagaId != null) {
+                log.info("Payment settlement requested, saga already in progress: sagaId={}", sagaId);
+            } else {
+                log.warn("No saga found for packetHash={}", event.getPacketHash());
+            }
             
         } catch (Exception e) {
             log.error("Error processing payment settlement requested event", e);
@@ -61,7 +79,20 @@ public class PaymentEventConsumer {
             PaymentSettledEvent event = objectMapper.readValue(message, PaymentSettledEvent.class);
             
             // Mark saga as completed
-            log.info("Payment settled, completing saga for packetHash={}", event.getPacketHash());
+            String sagaId = paymentSagaOrchestrator.findSagaByPacketHash(event.getPacketHash());
+            if (sagaId != null) {
+                paymentSagaOrchestrator.completePaymentSaga(
+                    sagaId,
+                    event.getPacketId(),
+                    event.getPacketHash(),
+                    event.getSenderVpa(),
+                    event.getReceiverVpa(),
+                    event.getAmount()
+                );
+                log.info("Payment settled, saga completed: sagaId={}", sagaId);
+            } else {
+                log.warn("No saga found for packetHash={}", event.getPacketHash());
+            }
             
         } catch (Exception e) {
             log.error("Error processing payment settled event", e);
@@ -75,8 +106,18 @@ public class PaymentEventConsumer {
             PaymentFailedEvent event = objectMapper.readValue(message, PaymentFailedEvent.class);
             
             // Mark saga as failed and trigger compensation
-            log.info("Payment failed, compensating saga for packetHash={}, reason={}", 
-                event.getPacketHash(), event.getFailureReason());
+            String sagaId = paymentSagaOrchestrator.findSagaByPacketHash(event.getPacketHash());
+            if (sagaId != null) {
+                paymentSagaOrchestrator.compensatePaymentSaga(
+                    sagaId,
+                    event.getPacketHash(),
+                    event.getFailureReason()
+                );
+                log.info("Payment failed, saga compensated: sagaId={}, reason={}", 
+                    sagaId, event.getFailureReason());
+            } else {
+                log.warn("No saga found for packetHash={}", event.getPacketHash());
+            }
             
         } catch (Exception e) {
             log.error("Error processing payment failed event", e);

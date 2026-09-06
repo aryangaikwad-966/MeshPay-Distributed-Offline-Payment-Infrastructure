@@ -78,4 +78,12 @@ public class SagaStateManager {
     public SagaState getSagaStateByPacketHash(String packetHash) {
         return sagaStateRepository.findByPacketHash(packetHash).orElse(null);
     }
+
+    /**
+     * Find saga ID by packet hash (for event correlation)
+     */
+    public String findSagaByPacketHash(String packetHash) {
+        Optional<SagaState> state = sagaStateRepository.findByPacketHash(packetHash);
+        return state.map(SagaState::getSagaId).orElse(null);
+    }
 }

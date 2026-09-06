@@ -92,6 +92,7 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_CREATE_TOPICS: "saga-validate-payment-command:1:1,saga-request-settlement-command:1:1,saga-complete-settlement-command:1:1,payment-validated:1:1,payment-settlement-requested:1:1,payment-settled:1:1,payment-failed:1:1,saga-completed:1:1,saga-failed:1:1"
     volumes:
       - kafka_data:/var/lib/kafka/data
     networks:

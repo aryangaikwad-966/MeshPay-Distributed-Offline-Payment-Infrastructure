@@ -195,4 +195,22 @@ public class PaymentSagaOrchestrator {
     public SagaState getSagaStatus(String sagaId) {
         return sagaStateManager.getSagaState(sagaId);
     }
+
+    /**
+     * Find saga by packet hash (for event correlation)
+     */
+    public String findSagaByPacketHash(String packetHash) {
+        return sagaStateManager.findSagaByPacketHash(packetHash);
+    }
+
+    /**
+     * Compensate payment saga on failure
+     */
+    @Transactional
+    public void compensatePaymentSaga(String sagaId, String packetHash, String failureReason) {
+        log.info("Compensating payment saga: sagaId={}, reason={}", sagaId, failureReason);
+        sagaStateManager.updateSagaState(sagaId, "SAGA_COMPENSATED");
+        sagaMetrics.incrementSagaCompensated();
+        sagaMetrics.decrementActiveSagas();
+    }
 }
