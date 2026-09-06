@@ -34,6 +34,12 @@ public interface OutboxRepository extends JpaRepository<Outbox, Long> {
     List<Outbox> findUnprocessedEntries();
 
     /**
+     * Find unprocessed outbox entries with limit for batch processing
+     */
+    @Query("SELECT o FROM Outbox o WHERE o.processed = false ORDER BY o.createdAt ASC")
+    List<Outbox> findUnprocessedEventsForProcessing(int limit);
+
+    /**
      * Find outbox entry by event ID
      */
     Optional<Outbox> findByEventId(String eventId);
@@ -63,6 +69,13 @@ public interface OutboxRepository extends JpaRepository<Outbox, Long> {
     @Modifying
     @Query("DELETE FROM Outbox o WHERE o.processed = true AND o.processedAt < :cutoffTime")
     void deleteProcessedOlderThan(Instant cutoffTime);
+
+    /**
+     * Delete processed outbox entries older than specified time (alternative name for processor)
+     */
+    @Modifying
+    @Query("DELETE FROM Outbox o WHERE o.processed = true AND o.processedAt < :cutoffTime")
+    int deleteProcessedEventsBefore(Instant cutoffTime);
 
     /**
      * Count unprocessed entries
