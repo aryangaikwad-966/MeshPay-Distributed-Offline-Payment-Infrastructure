@@ -32,36 +32,15 @@ MeshPay consists of the following microservices:
 ### Architecture Diagram
 
 ```
-┌─────────────┐
-│   Client    │
-└──────┬──────┘
-       │
-       ▼
-┌──────────────────┐
-│  API Gateway     │
-│  (Port 8080)     │
-└──────┬───────────┘
-       │
-       ├──────────────┬──────────────┐
-       ▼              ▼              ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│   Payment    │ │    Saga      │ │   Eureka     │
-│   Service    │ │   Service    │ │   Server     │
-│  (Port 8081) │ │  (Port 8082) │ │  (Port 8761) │
-└──────┬───────┘ └──────┬───────┘ └──────────────┘
-       │                │
-       │                │
-       ▼                ▼
-┌──────────────┐ ┌──────────────┐
-│   MySQL      │ │   Kafka      │
-│   (3307)     │ │   (9092)     │
-└──────────────┘ └──────┬───────┘
-                       │
-                       ▼
-                ┌──────────────┐
-                │   Redis      │
-                │   (6379)     │
-                └──────────────┘
+Client → API Gateway (8080) → Payment Service (8081) + Saga Service (8082)
+                                      ↓                    ↓
+                                  MySQL (3307)          MySQL (3308)
+                                      ↓                    ↓
+                                  Kafka (9092) ←─────────┘
+                                      ↓
+                                  Redis (6379)
+                                      ↓
+                              Eureka Server (8761)
 ```
 
 ---
@@ -430,65 +409,21 @@ Each service has its own database:
 
 ## 🐛 Troubleshooting
 
-### Service won't start
-
-1. Check if infrastructure is running:
+**Service won't start:**
 ```bash
-docker-compose ps
+docker-compose ps                    # Check infrastructure status
+docker-compose logs payment-service # Check service logs
 ```
 
-2. Check service logs:
-```bash
-docker-compose logs payment-service
-docker-compose logs saga-service
-```
-
-3. Verify database connectivity:
-```bash
-docker-compose exec mysql mysql -uroot -proot -e "SHOW DATABASES;"
-```
-
-### Kafka connection issues
-
-1. Verify Kafka is running:
+**Kafka issues:**
 ```bash
 docker-compose exec kafka kafka-topics --bootstrap-server localhost:9092 --list
 ```
 
-2. Check topics are created:
+**Service discovery:**
 ```bash
-docker-compose exec kafka kafka-topics --bootstrap-server localhost:9092 --list
+curl http://localhost:8761/eureka/apps  # Check Eureka registration
 ```
-
-### Service discovery issues
-
-1. Check Eureka dashboard:
-```
-http://localhost:8761
-```
-
-2. Verify services are registered:
-```bash
-curl http://localhost:8761/eureka/apps
-```
-
----
-
-## � License
-
-This project is licensed under the MIT License.
-
----
-
-## 👥 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
 
 ---
 
