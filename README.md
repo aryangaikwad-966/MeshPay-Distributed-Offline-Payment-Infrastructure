@@ -1,11 +1,11 @@
-# MeshPay: Microservices Architecture for Distributed Payments
+# MeshPay: Event-Driven Distributed Payment Infrastructure
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Java: 17+](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot: 3.3](https://img.shields.io/badge/Spring%20Boot-3.3-green.svg)](https://spring.io/projects/spring-boot)
 [![Spring Cloud: 2023.0](https://img.shields.io/badge/Spring%20Cloud-2023.0-blue.svg)](https://spring.io/projects/spring-cloud)
 
-MeshPay is a production-ready microservices architecture for distributed payment processing, featuring event-driven communication, saga pattern for distributed transactions, and comprehensive observability.
+MeshPay is a microservices-based distributed payment system demonstrating event-driven architecture, Kafka-based inter-service communication, transactional outbox pattern for reliable event publishing, and Saga orchestration with persistent state management for distributed transaction coordination.
 
 ---
 
@@ -175,7 +175,7 @@ http://localhost:8761
 
 ### Transactional Outbox Pattern
 
-Events are written to the outbox table in the same transaction as business data, ensuring exactly-once event delivery:
+Events are written to the outbox table in the same transaction as business data, ensuring reliable event publication with at-least-once delivery semantics:
 
 ```java
 @Transactional
@@ -188,19 +188,19 @@ public void processPayment(Payment payment) {
 }
 ```
 
-A scheduled processor publishes unprocessed events to Kafka every 5 seconds.
+A scheduled processor publishes unprocessed events to Kafka every 5 seconds using pessimistic locking to prevent concurrent processing. Consumer-side idempotency ensures exactly-once processing.
 
 ### Saga Pattern
 
-Distributed transactions are orchestrated using the Saga pattern:
+Distributed transactions are orchestrated using the Saga pattern with persistent state management:
 
-1. **Saga Start** - Initialize saga state
-2. **Payment Validation** - Validate payment details
-3. **Settlement Request** - Request settlement from bank
-4. **Settlement Completion** - Finalize transaction
-5. **Compensation** - Rollback on failure
+1. **Saga Start** - Initialize saga state in database
+2. **Payment Validation** - Validate payment details via Kafka command
+3. **Settlement Request** - Request settlement via Kafka command
+4. **Settlement Completion** - Finalize transaction via Kafka command
+5. **Compensation** - Rollback actions on failure
 
-Each step has a compensation action for failure recovery.
+Saga state is persisted to MySQL to survive orchestrator crashes. Each step has defined compensation actions for failure recovery.
 
 ### Event-Driven Architecture
 
@@ -215,6 +215,16 @@ Services communicate via Kafka topics:
 - `payment-failed` - Failure events
 - `saga-completed` - Saga completion events
 - `saga-failed` - Saga failure events
+
+### Idempotency & Duplicate Prevention
+
+Defense-in-depth approach prevents duplicate payment processing:
+
+1. **Redis SETNX** - Distributed idempotency using SHA-256 hash of ciphertext as tamper-proof key
+2. **Database Unique Constraints** - Unique constraint on packetHash in transactions table as fallback
+3. **Consumer-Side Idempotency** - EventProcessed table tracks processed Kafka events
+
+This ensures exactly-once payment settlement even under concurrent bridge node uploads.
 
 ---
 
@@ -266,6 +276,16 @@ curl http://localhost:8081/actuator/prometheus
 curl http://localhost:8082/actuator/prometheus
 ```
 
+### Distributed Tracing (OpenTelemetry)
+
+Services are configured for distributed tracing with OpenTelemetry:
+
+- **Sampling Probability**: 1.0 (100% for development)
+- **OTLP Exporter**: Configured for Jaeger/Tempo compatibility
+- **Service Names**: Unique per service for trace correlation
+
+Tracing provides visibility into request flows across service boundaries.
+
 ### Custom Metrics
 
 - Payment validation count
@@ -273,6 +293,24 @@ curl http://localhost:8082/actuator/prometheus
 - Saga completion rates
 - Active saga count
 - Outbox processing metrics
+
+### Resilience Patterns
+
+**Circuit Breakers:**
+- Payment Service: Circuit breaker for saga service calls
+- Saga Service: Circuit breaker for payment service calls
+- API Gateway: Circuit breakers for both services
+- Configured with 50% failure rate threshold, 10s wait duration
+
+**Retry Configuration:**
+- Automatic retry with 3 max attempts
+- 1s wait duration between retries
+- Exponential backoff for transient failures
+
+**Service Discovery:**
+- Eureka Server for dynamic service registration
+- Gateway discovers services via service names
+- Health monitoring and load balancing support
 
 ---
 
@@ -456,5 +494,5 @@ Contributions are welcome! Please follow these steps:
 
 <div align="center">
   <h3>MeshPay Microservices Architecture</h3>
-  <p>Production-ready distributed payment processing</p>
+  <p>Event-driven distributed payment infrastructure with Saga orchestration</p>
 </div>
